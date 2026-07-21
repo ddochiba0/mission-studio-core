@@ -18,5 +18,7 @@ future adapters -> packages/mission-engine -> packages/core
 - `template-engine`: project-agnostic duplication and validated exchange format
 - `map-contracts`: map-vendor-neutral points, viewport, and selection contracts
 - `map-adapter-leaflet`: replaceable Leaflet/OpenStreetMap UI adapter
+- `sync-engine`: offline-first queueing and server-connector orchestration
+- `browser-sync-queue`: browser persistence Adapter for pending server operations
 
 Application-specific words and rules belong outside `core` and `mission-engine`.

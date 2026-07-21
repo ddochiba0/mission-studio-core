@@ -15,6 +15,8 @@
     "@mission-studio/completion-engine": "workspace:*",
     "@mission-studio/template-engine": "workspace:*",
     "@mission-studio/map-adapter-leaflet": "workspace:*",
+    "@mission-studio/sync-engine": "workspace:*",
+    "@mission-studio/browser-sync-queue": "workspace:*",
     "@vitejs/plugin-react": "latest",
     "vite": "latest",
     "react": "latest",

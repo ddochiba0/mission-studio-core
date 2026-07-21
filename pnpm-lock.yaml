@@ -20,6 +20,9 @@ importers:
       '@mission-studio/browser-repository':
         specifier: workspace:*
         version: link:../../packages/browser-repository
+      '@mission-studio/browser-sync-queue':
+        specifier: workspace:*
+        version: link:../../packages/browser-sync-queue
       '@mission-studio/completion-engine':
         specifier: workspace:*
         version: link:../../packages/completion-engine
@@ -29,6 +32,9 @@ importers:
       '@mission-studio/mission-engine':
         specifier: workspace:*
         version: link:../../packages/mission-engine
+      '@mission-studio/sync-engine':
+        specifier: workspace:*
+        version: link:../../packages/sync-engine
       '@mission-studio/template-engine':
         specifier: workspace:*
         version: link:../../packages/template-engine
@@ -57,6 +63,12 @@ importers:
       '@mission-studio/core':
         specifier: workspace:*
         version: link:../core
+
+  packages/browser-sync-queue:
+    dependencies:
+      '@mission-studio/sync-engine':
+        specifier: workspace:*
+        version: link:../sync-engine
 
   packages/completion-engine:
     dependencies:
@@ -104,6 +116,12 @@ importers:
         version: link:../core
 
   packages/mission-engine:
+    dependencies:
+      '@mission-studio/core':
+        specifier: workspace:*
+        version: link:../core
+
+  packages/sync-engine:
     dependencies:
       '@mission-studio/core':
         specifier: workspace:*

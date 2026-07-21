@@ -5,10 +5,14 @@ import { BrowserMissionRepository } from "@mission-studio/browser-repository";
 import { LeafletMissionMap } from "@mission-studio/map-adapter-leaflet";
 import { CompletionEngine } from "@mission-studio/completion-engine";
 import { TemplateEngine } from "@mission-studio/template-engine";
+import { SyncingMissionRepository } from "@mission-studio/sync-engine";
+import { BrowserSyncQueue } from "@mission-studio/browser-sync-queue";
 import "./style.css";
 
 const engine = new MissionEngine({ createId: crypto.randomUUID, now: () => new Date() });
-const repository = new BrowserMissionRepository(localStorage);
+const syncQueue = new BrowserSyncQueue(localStorage);
+const localRepository = new BrowserMissionRepository(localStorage);
+const repository = new SyncingMissionRepository(localRepository, syncQueue, { createId: crypto.randomUUID, now: () => new Date() });
 const service = new MissionService(engine, repository);
 const templateEngine = new TemplateEngine({ createId: crypto.randomUUID, now: () => new Date() });
 
@@ -18,12 +22,14 @@ function App() {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [savedAt, setSavedAt] = useState<Date | null>(null);
+  const [pendingSync, setPendingSync] = useState(0);
   const selected = missions.find((mission) => mission.id === selectedId) ?? null;
   const refresh = async (selectId?: string) => {
     const next = await service.list(); setMissions(next);
     if (selectId) setSelectedId(selectId);
     else if (selectedId && !next.some((mission) => mission.id === selectedId)) setSelectedId(null);
     setSavedAt(new Date());
+    setPendingSync((await syncQueue.list()).length);
   };
   useEffect(() => { void refresh(); }, []);
 
@@ -63,7 +69,7 @@ function App() {
   }
 
   return <main>
-    <header><div><p className="eyebrow">MISSION STUDIO CORE V2</p><h1>Mission Studio</h1></div><div className="header-status"><span className="saved">● {savedAt ? `${savedAt.toLocaleTimeString()} 저장 완료` : "불러오기 완료"}</span><span className="sprint">SPRINT 4</span></div></header>
+    <header><div><p className="eyebrow">MISSION STUDIO CORE V2</p><h1>Mission Studio</h1></div><div className="header-status"><span className="saved">● {savedAt ? `${savedAt.toLocaleTimeString()} 로컬 저장 완료` : "불러오기 완료"}</span><span className="pending">서버 미연결 · 전송대기 {pendingSync}건</span><span className="sprint">SPRINT 8</span></div></header>
     <div className="workspace">
       <aside>
         <form onSubmit={createMission}>

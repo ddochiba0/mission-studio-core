@@ -7,6 +7,7 @@ main { width: min(1180px, calc(100% - 32px)); margin: auto; padding: 48px 0 80px
 header { display: flex; justify-content: space-between; align-items: end; margin-bottom: 36px; }
 .header-status { display: flex; align-items: center; gap: 10px; }
 .saved { color: #467466; font-size: .9rem; font-weight: 800; }
+.pending { padding: 7px 10px; border-radius: 999px; color: #85581f; background: #f7ead5; font-size: .82rem; font-weight: 800; }
 .eyebrow { margin: 0 0 8px; color: #b06b25; font-weight: 800; letter-spacing: .14em; }
 h1 { margin: 0; font-size: clamp(2.5rem, 6vw, 4.8rem); letter-spacing: -.06em; }
 h2 { margin: 0 0 24px; font-size: 1.35rem; }
