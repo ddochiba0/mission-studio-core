@@ -1,0 +1,27 @@
+{
+  "name": "@mission-studio/studio-web",
+  "version": "2.0.0-alpha.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && vite build",
+    "dev": "vite",
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@mission-studio/mission-engine": "workspace:*",
+    "@mission-studio/browser-repository": "workspace:*",
+    "@mission-studio/completion-engine": "workspace:*",
+    "@mission-studio/template-engine": "workspace:*",
+    "@mission-studio/map-adapter-leaflet": "workspace:*",
+    "@vitejs/plugin-react": "latest",
+    "vite": "latest",
+    "react": "latest",
+    "react-dom": "latest"
+  },
+  "devDependencies": {
+    "@types/react": "latest",
+    "@types/react-dom": "latest"
+  }
+}

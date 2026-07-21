@@ -1,0 +1,17 @@
+{
+  "name": "@mission-studio/map-adapter-leaflet",
+  "version": "2.0.0-alpha.1",
+  "type": "module",
+  "exports": { "types": "./src/index.tsx", "import": "./dist/index.js" },
+  "types": "./src/index.tsx",
+  "files": ["dist"],
+  "scripts": { "build": "tsc -p tsconfig.json", "test": "vitest run --passWithNoTests", "typecheck": "tsc -p tsconfig.json --noEmit" },
+  "dependencies": {
+    "@mission-studio/map-contracts": "workspace:*",
+    "leaflet": "^1.9.4",
+    "react": "latest",
+    "react-leaflet": "^5.0.0"
+  },
+  "devDependencies": { "@types/leaflet": "^1.9.20", "@types/react": "latest" },
+  "peerDependencies": { "react": ">=19", "react-dom": ">=19" }
+}
