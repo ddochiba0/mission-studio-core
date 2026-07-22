@@ -9,8 +9,10 @@
   },
   "scripts": {
     "build": "pnpm -r build",
+    "check:env-example": "node scripts/check-environment.mjs apps/studio-web/.env.example",
+    "check:env-local": "node scripts/check-environment.mjs apps/studio-web/.env.local --require-values",
     "dev": "pnpm --filter @mission-studio/studio-web dev",
-    "test": "pnpm -r test",
+    "test": "pnpm -r test && node --test scripts/*.test.mjs",
     "typecheck": "pnpm -r typecheck"
   },
   "devDependencies": {

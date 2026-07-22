@@ -10,6 +10,8 @@ apps/
 packages/
   core/                Domain types and policies
   mission-engine/      Mission creation and validation engine
+  sync-engine/         Offline-first bidirectional synchronization
+  auth-engine/         Authentication contracts and state
 ```
 
 Camping is the first adapter/use case. The core packages must not depend on camping, tourism, festivals, schools, or experience-village concepts.
@@ -19,12 +21,17 @@ Camping is the first adapter/use case. The core packages must not depend on camp
 ```bash
 pnpm install
 pnpm test
+pnpm check:env-example
 pnpm build
 pnpm dev
 ```
 
 Node.js 22 or later and pnpm 10 or later are required.
 
+## Server configuration
+
+Copy `apps/studio-web/.env.example` to `.env.local`, then enter the Supabase project URL and Publishable Key. Never commit `.env.local`, database passwords, or secret/service-role keys.
+
 ## Current status
 
-Sprint 1 establishes the monorepo, shared quality gates, a framework-independent mission domain, and a working Studio shell.
+Sprint 13 adds continuous integration and deployment readiness checks. Real Supabase migration, account isolation, and PC/mobile acceptance testing remain required before an operational release.
