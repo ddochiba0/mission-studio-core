@@ -18,7 +18,7 @@ future adapters -> packages/mission-engine -> packages/core
 - `template-engine`: project-agnostic duplication and validated exchange format
 - `map-contracts`: map-vendor-neutral points, viewport, and selection contracts
 - `map-adapter-leaflet`: replaceable Leaflet/OpenStreetMap UI adapter
-- `sync-engine`: offline-first queueing, pull/merge policy, conflict preservation, and server-connector orchestration
+- `sync-engine`: offline-first queueing, pull-before-push orchestration, conflict resolution, and server-neutral merge policy
 - `browser-sync-queue`: browser persistence Adapter for pending server operations
 - `supabase-mission-connector`: optional deployment Connector; owns Supabase row and deletion-tombstone mapping
 - `auth-engine`: vendor-neutral authentication state and actions

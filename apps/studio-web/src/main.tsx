@@ -5,7 +5,7 @@ import { BrowserMissionRepository } from "@mission-studio/browser-repository";
 import { LeafletMissionMap } from "@mission-studio/map-adapter-leaflet";
 import { CompletionEngine } from "@mission-studio/completion-engine";
 import { TemplateEngine } from "@mission-studio/template-engine";
-import { MissionPullEngine, SyncEngine, SyncingMissionRepository, type PullReport, type SyncReport } from "@mission-studio/sync-engine";
+import { BidirectionalSyncEngine, MissionPullEngine, SyncConflictResolver, SyncEngine, SyncingMissionRepository, type PullReport, type SyncConflict, type SyncReport } from "@mission-studio/sync-engine";
 import { BrowserSyncQueue } from "@mission-studio/browser-sync-queue";
 import { AuthEngine, type AuthState } from "@mission-studio/auth-engine";
 import { createSupabaseClient, SupabaseAuthAdapter } from "@mission-studio/supabase-auth-adapter";
@@ -24,6 +24,8 @@ const supabaseClient = supabaseUrl && supabaseKey ? createSupabaseClient(supabas
 const authEngine = supabaseClient ? new AuthEngine(new SupabaseAuthAdapter(supabaseClient)) : null;
 const syncEngine = supabaseClient ? new SyncEngine(syncQueue, createSupabaseMissionConnectorFromClient(supabaseClient)) : null;
 const pullEngine = supabaseClient ? new MissionPullEngine(localRepository, syncQueue, createSupabaseMissionConnectorFromClient(supabaseClient)) : null;
+const bidirectionalSync = pullEngine && syncEngine ? new BidirectionalSyncEngine(pullEngine, syncEngine) : null;
+const conflictResolver = new SyncConflictResolver(localRepository, syncQueue);
 
 function App() {
   const [missions, setMissions] = useState<readonly MissionDefinition[]>([]);
@@ -35,6 +37,7 @@ function App() {
   const [syncReport, setSyncReport] = useState<SyncReport | null>(null);
   const [pullReport, setPullReport] = useState<PullReport | null>(null);
   const [authState, setAuthState] = useState<AuthState>({ status: "signed_out", session: null });
+  const [synchronizing, setSynchronizing] = useState(false);
   const selected = missions.find((mission) => mission.id === selectedId) ?? null;
   const refresh = async (selectId?: string) => {
     const next = await service.list(); setMissions(next);
@@ -50,13 +53,28 @@ function App() {
     return authEngine.subscribe(setAuthState);
   }, []);
   useEffect(() => {
-    if (!syncEngine || authState.status !== "signed_in") return;
-    const synchronize = async () => {
-      const report = await syncEngine.flush(); setSyncReport(report); setPendingSync(report.pending);
-      if (report.state !== "error" && pullEngine) { const pulled = await pullEngine.pull(); setPullReport(pulled); await refresh(); }
-    };
-    void synchronize(); window.addEventListener("online", synchronize); return () => window.removeEventListener("online", synchronize);
+    if (!bidirectionalSync || authState.status !== "signed_in") return;
+    const online = () => { void synchronize(); };
+    void synchronize(); window.addEventListener("online", online); return () => window.removeEventListener("online", online);
   }, [authState.status]);
+
+  async function synchronize() {
+    if (!bidirectionalSync || authState.status !== "signed_in" || synchronizing) return;
+    setSynchronizing(true);
+    try {
+      const report = await bidirectionalSync.synchronize(); setPullReport(report.pull);
+      if (report.upload) { setSyncReport(report.upload); setPendingSync(report.upload.pending); }
+      else setPendingSync((await syncQueue.list()).length);
+      await refresh();
+    } catch (reason) {
+      setSyncReport({ state: "error", completed: 0, pending: (await syncQueue.list()).length, errors: [reason instanceof Error ? reason.message : "동기화에 실패했습니다."] });
+    } finally { setSynchronizing(false); }
+  }
+
+  async function resolveConflict(conflict: SyncConflict, choice: "keep_local" | "use_remote") {
+    await conflictResolver.resolve(conflict, choice);
+    setPullReport(null); await refresh(); await synchronize();
+  }
 
   async function createMission(event: React.FormEvent) {
     event.preventDefault(); if (!title.trim()) return;
@@ -94,8 +112,9 @@ function App() {
   }
 
   return <main>
-    <header><div><p className="eyebrow">MISSION STUDIO CORE V2</p><h1>Mission Studio</h1></div><div className="header-status"><span className="saved">● {savedAt ? `${savedAt.toLocaleTimeString()} 로컬 저장 완료` : "불러오기 완료"}</span><SyncBadge configured={!!syncEngine} signedIn={authState.status === "signed_in"} pending={pendingSync} report={syncReport} pull={pullReport} /><span className="sprint">SPRINT 11</span></div></header>
-    <AuthPanel engine={authEngine} state={authState} />
+    <header><div><p className="eyebrow">MISSION STUDIO CORE V2</p><h1>Mission Studio</h1></div><div className="header-status"><span className="saved">● {savedAt ? `${savedAt.toLocaleTimeString()} 로컬 저장 완료` : "불러오기 완료"}</span><SyncBadge configured={!!syncEngine} signedIn={authState.status === "signed_in"} pending={pendingSync} report={syncReport} pull={pullReport} /><span className="sprint">SPRINT 12</span></div></header>
+    <AuthPanel engine={authEngine} state={authState} onSynchronize={synchronize} synchronizing={synchronizing} />
+    {!!pullReport?.conflicts.length && <ConflictPanel conflicts={pullReport.conflicts} onResolve={resolveConflict} />}
     <div className="workspace">
       <aside>
         <form onSubmit={createMission}>
@@ -124,16 +143,16 @@ function SyncBadge({ configured, signedIn, pending, report, pull }: { configured
   if (!signedIn) return <span className="pending">로그인 필요 · 전송대기 {pending}건</span>;
   if (report?.state === "error") return <span className="sync-error" title={report.errors.join("\n")}>동기화 오류 · 대기 {pending}건</span>;
   if (pending > 0) return <span className="pending">서버 전송대기 {pending}건</span>;
-  if (pull?.conflicts) return <span className="sync-warning" title="이 기기의 미전송 편집을 보존했습니다.">편집 충돌 보존 · {pull.conflicts}건</span>;
+  if (pull?.conflicts.length) return <span className="sync-warning" title="이 기기의 미전송 편집을 보존했습니다.">선택 필요 · {pull.conflicts.length}건</span>;
   const received = (pull?.downloaded ?? 0) + (pull?.deleted ?? 0);
   return <span className="synced">서버 동기화 완료{received ? ` · 반영 ${received}건` : ""}</span>;
 }
 
-function AuthPanel({ engine, state }: { engine: AuthEngine | null; state: AuthState }) {
+function AuthPanel({ engine, state, onSynchronize, synchronizing }: { engine: AuthEngine | null; state: AuthState; onSynchronize: () => Promise<void>; synchronizing: boolean }) {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   if (!engine) return <section className="auth-panel auth-unconfigured"><div><strong>서버 연결 준비</strong><span>환경 설정 후 로그인하면 로컬 작업이 자동으로 서버와 동기화됩니다.</span></div></section>;
-  if (state.status === "signed_in") return <section className="auth-panel"><div><strong>서버 로그인 완료</strong><span>{state.session.user.email} · 로컬 저장 후 자동 동기화</span></div><button type="button" onClick={async () => { setBusy(true); setError(""); try { await engine.signOut(); } catch (reason) { setError(reason instanceof Error ? reason.message : "로그아웃에 실패했습니다."); } finally { setBusy(false); } }} disabled={busy}>로그아웃</button>{error && <p className="auth-error">{error}</p>}</section>;
+  if (state.status === "signed_in") return <section className="auth-panel"><div><strong>서버 로그인 완료</strong><span>{state.session.user.email} · 로컬 저장 후 자동 동기화</span></div><div className="auth-actions"><button type="button" className="secondary" onClick={() => void onSynchronize()} disabled={synchronizing}>{synchronizing ? "동기화 중…" : "지금 동기화"}</button><button type="button" onClick={async () => { setBusy(true); setError(""); try { await engine.signOut(); } catch (reason) { setError(reason instanceof Error ? reason.message : "로그아웃에 실패했습니다."); } finally { setBusy(false); } }} disabled={busy}>로그아웃</button></div>{error && <p className="auth-error">{error}</p>}</section>;
   async function login(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault(); const data = new FormData(event.currentTarget); setBusy(true); setError("");
     try { await engine!.signIn(String(data.get("email") ?? ""), String(data.get("password") ?? "")); event.currentTarget.reset(); }
@@ -141,6 +160,10 @@ function AuthPanel({ engine, state }: { engine: AuthEngine | null; state: AuthSt
     finally { setBusy(false); }
   }
   return <section className="auth-panel"><div><strong>서버 동기화 로그인</strong><span>로그인 전에도 작업할 수 있으며 데이터는 이 기기에 안전하게 저장됩니다.</span></div><form onSubmit={login}><input name="email" type="email" autoComplete="username" aria-label="이메일" placeholder="이메일" required /><input name="password" type="password" autoComplete="current-password" aria-label="비밀번호" placeholder="비밀번호" required /><button disabled={busy}>{busy ? "확인 중…" : "로그인"}</button></form>{error && <p className="auth-error">{error}</p>}</section>;
+}
+
+function ConflictPanel({ conflicts, onResolve }: { conflicts: readonly SyncConflict[]; onResolve: (conflict: SyncConflict, choice: "keep_local" | "use_remote") => Promise<void> }) {
+  return <section className="conflict-panel"><div><p className="eyebrow">동기화 확인 필요</p><h2>같은 미션이 다른 기기에서도 변경되었습니다.</h2><p>자동으로 덮어쓰지 않고 두 내용을 보존했습니다. 사용할 내용을 선택하세요.</p></div>{conflicts.map((conflict) => <article key={conflict.missionId}><div><small>내 기기</small><strong>{conflict.local?.title ?? "이 기기에서 삭제됨"}</strong><span>{conflict.local ? new Date(conflict.local.updatedAt).toLocaleString() : "삭제 작업 대기 중"}</span></div><div><small>서버</small><strong>{conflict.remote.state === "active" ? conflict.remote.mission.title : "다른 기기에서 삭제됨"}</strong><span>{new Date(conflict.remote.updatedAt).toLocaleString()}</span></div><div className="conflict-actions"><button type="button" onClick={() => void onResolve(conflict, "keep_local")}>내 작업 유지</button><button type="button" className="secondary" onClick={() => void onResolve(conflict, "use_remote")}>서버 작업 사용</button></div></article>)}</section>;
 }
 
 function ParticipantPreview({ mission }: { mission: MissionDefinition | null }) {

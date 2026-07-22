@@ -1,8 +1,8 @@
 import type { MissionDefinition, MissionId, MissionRepository } from "@mission-studio/core";
 
 export type SyncOperation =
-  | { readonly id: string; readonly type: "upsert"; readonly mission: MissionDefinition; readonly queuedAt: string; readonly attempts: number }
-  | { readonly id: string; readonly type: "delete"; readonly missionId: MissionId; readonly queuedAt: string; readonly attempts: number };
+  | { readonly id: string; readonly type: "upsert"; readonly mission: MissionDefinition; readonly queuedAt: string; readonly attempts: number; readonly force?: boolean }
+  | { readonly id: string; readonly type: "delete"; readonly missionId: MissionId; readonly queuedAt: string; readonly attempts: number; readonly force?: boolean };
 
 export interface SyncQueue {
   list(): Promise<readonly SyncOperation[]>;
@@ -26,7 +26,18 @@ export interface MissionRemoteReader {
 export interface PullReport {
   readonly downloaded: number;
   readonly deleted: number;
-  readonly conflicts: number;
+  readonly conflicts: readonly SyncConflict[];
+}
+
+export interface SyncConflict {
+  readonly missionId: MissionId;
+  readonly local: MissionDefinition | null;
+  readonly remote: RemoteMissionSnapshot;
+}
+
+export interface SynchronizationReport {
+  readonly pull: PullReport;
+  readonly upload: SyncReport | null;
 }
 
 export interface SyncReport {
@@ -76,12 +87,13 @@ export class MissionPullEngine {
 
   public async pull(): Promise<PullReport> {
     const [snapshots, pending] = await Promise.all([this.remote.listSnapshots(), this.queue.list()]);
-    let downloaded = 0; let deleted = 0; let conflicts = 0;
+    let downloaded = 0; let deleted = 0; const conflicts: SyncConflict[] = [];
     for (const snapshot of snapshots) {
       const local = await this.local.findById(snapshot.id);
       const localChange = pending.find((operation) => operation.type === "upsert" ? operation.mission.id === snapshot.id : operation.missionId === snapshot.id);
       if (localChange) {
-        if (snapshot.state === "deleted" || (snapshot.state === "active" && local && snapshot.updatedAt > local.updatedAt)) conflicts += 1;
+        const localUpdatedAt = localChange.type === "upsert" ? localChange.mission.updatedAt : localChange.queuedAt;
+        if (!localChange.force && snapshot.updatedAt > localUpdatedAt) conflicts.push({ missionId: snapshot.id, local: local ? structuredClone(local) : null, remote: structuredClone(snapshot) });
         continue;
       }
       if (snapshot.state === "deleted") {
@@ -93,6 +105,32 @@ export class MissionPullEngine {
       }
     }
     return { downloaded, deleted, conflicts };
+  }
+}
+
+export class BidirectionalSyncEngine {
+  public constructor(private readonly pullEngine: MissionPullEngine, private readonly syncEngine: SyncEngine) {}
+
+  public async synchronize(): Promise<SynchronizationReport> {
+    const pull = await this.pullEngine.pull();
+    if (pull.conflicts.length) return { pull, upload: null };
+    return { pull, upload: await this.syncEngine.flush() };
+  }
+}
+
+export class SyncConflictResolver {
+  public constructor(private readonly local: MissionRepository, private readonly queue: SyncQueue) {}
+
+  public async resolve(conflict: SyncConflict, choice: "keep_local" | "use_remote"): Promise<void> {
+    const operations = await this.queue.list();
+    const matching = operations.filter((operation) => operation.type === "upsert" ? operation.mission.id === conflict.missionId : operation.missionId === conflict.missionId);
+    if (choice === "keep_local") {
+      for (const operation of matching) await this.queue.put({ ...operation, force: true });
+      return;
+    }
+    for (const operation of matching) await this.queue.remove(operation.id);
+    if (conflict.remote.state === "active") await this.local.save(structuredClone(conflict.remote.mission));
+    else await this.local.delete(conflict.missionId);
   }
 }
 
