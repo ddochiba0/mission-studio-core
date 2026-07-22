@@ -5,7 +5,7 @@ import { BrowserMissionRepository } from "@mission-studio/browser-repository";
 import { LeafletMissionMap } from "@mission-studio/map-adapter-leaflet";
 import { CompletionEngine } from "@mission-studio/completion-engine";
 import { TemplateEngine } from "@mission-studio/template-engine";
-import { SyncEngine, SyncingMissionRepository, type SyncReport } from "@mission-studio/sync-engine";
+import { MissionPullEngine, SyncEngine, SyncingMissionRepository, type PullReport, type SyncReport } from "@mission-studio/sync-engine";
 import { BrowserSyncQueue } from "@mission-studio/browser-sync-queue";
 import { AuthEngine, type AuthState } from "@mission-studio/auth-engine";
 import { createSupabaseClient, SupabaseAuthAdapter } from "@mission-studio/supabase-auth-adapter";
@@ -23,6 +23,7 @@ const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | un
 const supabaseClient = supabaseUrl && supabaseKey ? createSupabaseClient(supabaseUrl, supabaseKey) : null;
 const authEngine = supabaseClient ? new AuthEngine(new SupabaseAuthAdapter(supabaseClient)) : null;
 const syncEngine = supabaseClient ? new SyncEngine(syncQueue, createSupabaseMissionConnectorFromClient(supabaseClient)) : null;
+const pullEngine = supabaseClient ? new MissionPullEngine(localRepository, syncQueue, createSupabaseMissionConnectorFromClient(supabaseClient)) : null;
 
 function App() {
   const [missions, setMissions] = useState<readonly MissionDefinition[]>([]);
@@ -32,6 +33,7 @@ function App() {
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const [pendingSync, setPendingSync] = useState(0);
   const [syncReport, setSyncReport] = useState<SyncReport | null>(null);
+  const [pullReport, setPullReport] = useState<PullReport | null>(null);
   const [authState, setAuthState] = useState<AuthState>({ status: "signed_out", session: null });
   const selected = missions.find((mission) => mission.id === selectedId) ?? null;
   const refresh = async (selectId?: string) => {
@@ -49,7 +51,10 @@ function App() {
   }, []);
   useEffect(() => {
     if (!syncEngine || authState.status !== "signed_in") return;
-    const synchronize = async () => { const report = await syncEngine.flush(); setSyncReport(report); setPendingSync(report.pending); };
+    const synchronize = async () => {
+      const report = await syncEngine.flush(); setSyncReport(report); setPendingSync(report.pending);
+      if (report.state !== "error" && pullEngine) { const pulled = await pullEngine.pull(); setPullReport(pulled); await refresh(); }
+    };
     void synchronize(); window.addEventListener("online", synchronize); return () => window.removeEventListener("online", synchronize);
   }, [authState.status]);
 
@@ -89,7 +94,7 @@ function App() {
   }
 
   return <main>
-    <header><div><p className="eyebrow">MISSION STUDIO CORE V2</p><h1>Mission Studio</h1></div><div className="header-status"><span className="saved">● {savedAt ? `${savedAt.toLocaleTimeString()} 로컬 저장 완료` : "불러오기 완료"}</span><SyncBadge configured={!!syncEngine} signedIn={authState.status === "signed_in"} pending={pendingSync} report={syncReport} /><span className="sprint">SPRINT 10</span></div></header>
+    <header><div><p className="eyebrow">MISSION STUDIO CORE V2</p><h1>Mission Studio</h1></div><div className="header-status"><span className="saved">● {savedAt ? `${savedAt.toLocaleTimeString()} 로컬 저장 완료` : "불러오기 완료"}</span><SyncBadge configured={!!syncEngine} signedIn={authState.status === "signed_in"} pending={pendingSync} report={syncReport} pull={pullReport} /><span className="sprint">SPRINT 11</span></div></header>
     <AuthPanel engine={authEngine} state={authState} />
     <div className="workspace">
       <aside>
@@ -114,12 +119,14 @@ function App() {
   </main>;
 }
 
-function SyncBadge({ configured, signedIn, pending, report }: { configured: boolean; signedIn: boolean; pending: number; report: SyncReport | null }) {
+function SyncBadge({ configured, signedIn, pending, report, pull }: { configured: boolean; signedIn: boolean; pending: number; report: SyncReport | null; pull: PullReport | null }) {
   if (!configured) return <span className="pending">서버 미설정 · 전송대기 {pending}건</span>;
   if (!signedIn) return <span className="pending">로그인 필요 · 전송대기 {pending}건</span>;
   if (report?.state === "error") return <span className="sync-error" title={report.errors.join("\n")}>동기화 오류 · 대기 {pending}건</span>;
   if (pending > 0) return <span className="pending">서버 전송대기 {pending}건</span>;
-  return <span className="synced">서버 동기화 완료</span>;
+  if (pull?.conflicts) return <span className="sync-warning" title="이 기기의 미전송 편집을 보존했습니다.">편집 충돌 보존 · {pull.conflicts}건</span>;
+  const received = (pull?.downloaded ?? 0) + (pull?.deleted ?? 0);
+  return <span className="synced">서버 동기화 완료{received ? ` · 반영 ${received}건` : ""}</span>;
 }
 
 function AuthPanel({ engine, state }: { engine: AuthEngine | null; state: AuthState }) {

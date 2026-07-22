@@ -15,6 +15,20 @@ export interface MissionRemoteConnector {
   delete(id: MissionId): Promise<void>;
 }
 
+export type RemoteMissionSnapshot =
+  | { readonly id: MissionId; readonly state: "active"; readonly mission: MissionDefinition; readonly updatedAt: string }
+  | { readonly id: MissionId; readonly state: "deleted"; readonly updatedAt: string };
+
+export interface MissionRemoteReader {
+  listSnapshots(): Promise<readonly RemoteMissionSnapshot[]>;
+}
+
+export interface PullReport {
+  readonly downloaded: number;
+  readonly deleted: number;
+  readonly conflicts: number;
+}
+
 export interface SyncReport {
   readonly state: "synced" | "pending" | "error";
   readonly completed: number;
@@ -50,6 +64,35 @@ export class SyncEngine {
     }
     const pending = (await this.queue.list()).length;
     return { state: errors.length ? "error" : pending ? "pending" : "synced", completed, pending, errors };
+  }
+}
+
+export class MissionPullEngine {
+  public constructor(
+    private readonly local: MissionRepository,
+    private readonly queue: SyncQueue,
+    private readonly remote: MissionRemoteReader,
+  ) {}
+
+  public async pull(): Promise<PullReport> {
+    const [snapshots, pending] = await Promise.all([this.remote.listSnapshots(), this.queue.list()]);
+    let downloaded = 0; let deleted = 0; let conflicts = 0;
+    for (const snapshot of snapshots) {
+      const local = await this.local.findById(snapshot.id);
+      const localChange = pending.find((operation) => operation.type === "upsert" ? operation.mission.id === snapshot.id : operation.missionId === snapshot.id);
+      if (localChange) {
+        if (snapshot.state === "deleted" || (snapshot.state === "active" && local && snapshot.updatedAt > local.updatedAt)) conflicts += 1;
+        continue;
+      }
+      if (snapshot.state === "deleted") {
+        if (local && snapshot.updatedAt >= local.updatedAt && await this.local.delete(snapshot.id)) deleted += 1;
+        continue;
+      }
+      if (!local || snapshot.updatedAt > local.updatedAt) {
+        await this.local.save(structuredClone(snapshot.mission)); downloaded += 1;
+      }
+    }
+    return { downloaded, deleted, conflicts };
   }
 }
 
