@@ -7,7 +7,9 @@ import { CompletionEngine } from "@mission-studio/completion-engine";
 import { TemplateEngine } from "@mission-studio/template-engine";
 import { SyncEngine, SyncingMissionRepository, type SyncReport } from "@mission-studio/sync-engine";
 import { BrowserSyncQueue } from "@mission-studio/browser-sync-queue";
-import { createSupabaseMissionConnector } from "@mission-studio/supabase-mission-connector";
+import { AuthEngine, type AuthState } from "@mission-studio/auth-engine";
+import { createSupabaseClient, SupabaseAuthAdapter } from "@mission-studio/supabase-auth-adapter";
+import { createSupabaseMissionConnectorFromClient } from "@mission-studio/supabase-mission-connector";
 import "./style.css";
 
 const engine = new MissionEngine({ createId: crypto.randomUUID, now: () => new Date() });
@@ -18,7 +20,9 @@ const service = new MissionService(engine, repository);
 const templateEngine = new TemplateEngine({ createId: crypto.randomUUID, now: () => new Date() });
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined;
-const syncEngine = supabaseUrl && supabaseKey ? new SyncEngine(syncQueue, createSupabaseMissionConnector(supabaseUrl, supabaseKey)) : null;
+const supabaseClient = supabaseUrl && supabaseKey ? createSupabaseClient(supabaseUrl, supabaseKey) : null;
+const authEngine = supabaseClient ? new AuthEngine(new SupabaseAuthAdapter(supabaseClient)) : null;
+const syncEngine = supabaseClient ? new SyncEngine(syncQueue, createSupabaseMissionConnectorFromClient(supabaseClient)) : null;
 
 function App() {
   const [missions, setMissions] = useState<readonly MissionDefinition[]>([]);
@@ -28,6 +32,7 @@ function App() {
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const [pendingSync, setPendingSync] = useState(0);
   const [syncReport, setSyncReport] = useState<SyncReport | null>(null);
+  const [authState, setAuthState] = useState<AuthState>({ status: "signed_out", session: null });
   const selected = missions.find((mission) => mission.id === selectedId) ?? null;
   const refresh = async (selectId?: string) => {
     const next = await service.list(); setMissions(next);
@@ -38,10 +43,15 @@ function App() {
   };
   useEffect(() => { void refresh(); }, []);
   useEffect(() => {
-    if (!syncEngine) return;
+    if (!authEngine) return;
+    void authEngine.current().then(setAuthState).catch(() => setAuthState({ status: "signed_out", session: null }));
+    return authEngine.subscribe(setAuthState);
+  }, []);
+  useEffect(() => {
+    if (!syncEngine || authState.status !== "signed_in") return;
     const synchronize = async () => { const report = await syncEngine.flush(); setSyncReport(report); setPendingSync(report.pending); };
     void synchronize(); window.addEventListener("online", synchronize); return () => window.removeEventListener("online", synchronize);
-  }, []);
+  }, [authState.status]);
 
   async function createMission(event: React.FormEvent) {
     event.preventDefault(); if (!title.trim()) return;
@@ -79,7 +89,8 @@ function App() {
   }
 
   return <main>
-    <header><div><p className="eyebrow">MISSION STUDIO CORE V2</p><h1>Mission Studio</h1></div><div className="header-status"><span className="saved">● {savedAt ? `${savedAt.toLocaleTimeString()} 로컬 저장 완료` : "불러오기 완료"}</span><SyncBadge connected={!!syncEngine} pending={pendingSync} report={syncReport} /><span className="sprint">SPRINT 9</span></div></header>
+    <header><div><p className="eyebrow">MISSION STUDIO CORE V2</p><h1>Mission Studio</h1></div><div className="header-status"><span className="saved">● {savedAt ? `${savedAt.toLocaleTimeString()} 로컬 저장 완료` : "불러오기 완료"}</span><SyncBadge configured={!!syncEngine} signedIn={authState.status === "signed_in"} pending={pendingSync} report={syncReport} /><span className="sprint">SPRINT 10</span></div></header>
+    <AuthPanel engine={authEngine} state={authState} />
     <div className="workspace">
       <aside>
         <form onSubmit={createMission}>
@@ -103,11 +114,26 @@ function App() {
   </main>;
 }
 
-function SyncBadge({ connected, pending, report }: { connected: boolean; pending: number; report: SyncReport | null }) {
-  if (!connected) return <span className="pending">서버 미설정 · 전송대기 {pending}건</span>;
+function SyncBadge({ configured, signedIn, pending, report }: { configured: boolean; signedIn: boolean; pending: number; report: SyncReport | null }) {
+  if (!configured) return <span className="pending">서버 미설정 · 전송대기 {pending}건</span>;
+  if (!signedIn) return <span className="pending">로그인 필요 · 전송대기 {pending}건</span>;
   if (report?.state === "error") return <span className="sync-error" title={report.errors.join("\n")}>동기화 오류 · 대기 {pending}건</span>;
   if (pending > 0) return <span className="pending">서버 전송대기 {pending}건</span>;
   return <span className="synced">서버 동기화 완료</span>;
+}
+
+function AuthPanel({ engine, state }: { engine: AuthEngine | null; state: AuthState }) {
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  if (!engine) return <section className="auth-panel auth-unconfigured"><div><strong>서버 연결 준비</strong><span>환경 설정 후 로그인하면 로컬 작업이 자동으로 서버와 동기화됩니다.</span></div></section>;
+  if (state.status === "signed_in") return <section className="auth-panel"><div><strong>서버 로그인 완료</strong><span>{state.session.user.email} · 로컬 저장 후 자동 동기화</span></div><button type="button" onClick={async () => { setBusy(true); setError(""); try { await engine.signOut(); } catch (reason) { setError(reason instanceof Error ? reason.message : "로그아웃에 실패했습니다."); } finally { setBusy(false); } }} disabled={busy}>로그아웃</button>{error && <p className="auth-error">{error}</p>}</section>;
+  async function login(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault(); const data = new FormData(event.currentTarget); setBusy(true); setError("");
+    try { await engine!.signIn(String(data.get("email") ?? ""), String(data.get("password") ?? "")); event.currentTarget.reset(); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : "로그인에 실패했습니다."); }
+    finally { setBusy(false); }
+  }
+  return <section className="auth-panel"><div><strong>서버 동기화 로그인</strong><span>로그인 전에도 작업할 수 있으며 데이터는 이 기기에 안전하게 저장됩니다.</span></div><form onSubmit={login}><input name="email" type="email" autoComplete="username" aria-label="이메일" placeholder="이메일" required /><input name="password" type="password" autoComplete="current-password" aria-label="비밀번호" placeholder="비밀번호" required /><button disabled={busy}>{busy ? "확인 중…" : "로그인"}</button></form>{error && <p className="auth-error">{error}</p>}</section>;
 }
 
 function ParticipantPreview({ mission }: { mission: MissionDefinition | null }) {

@@ -17,6 +17,9 @@ importers:
 
   apps/studio-web:
     dependencies:
+      '@mission-studio/auth-engine':
+        specifier: workspace:*
+        version: link:../../packages/auth-engine
       '@mission-studio/browser-repository':
         specifier: workspace:*
         version: link:../../packages/browser-repository
@@ -32,6 +35,9 @@ importers:
       '@mission-studio/mission-engine':
         specifier: workspace:*
         version: link:../../packages/mission-engine
+      '@mission-studio/supabase-auth-adapter':
+        specifier: workspace:*
+        version: link:../../packages/supabase-auth-adapter
       '@mission-studio/supabase-mission-connector':
         specifier: workspace:*
         version: link:../../packages/supabase-mission-connector
@@ -60,6 +66,8 @@ importers:
       '@types/react-dom':
         specifier: latest
         version: 19.2.3(@types/react@19.2.17)
+
+  packages/auth-engine: {}
 
   packages/browser-repository:
     dependencies:
@@ -123,6 +131,15 @@ importers:
       '@mission-studio/core':
         specifier: workspace:*
         version: link:../core
+
+  packages/supabase-auth-adapter:
+    dependencies:
+      '@mission-studio/auth-engine':
+        specifier: workspace:*
+        version: link:../auth-engine
+      '@supabase/supabase-js':
+        specifier: ^2.57.4
+        version: 2.110.7
 
   packages/supabase-mission-connector:
     dependencies:

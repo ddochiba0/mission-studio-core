@@ -10,6 +10,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@mission-studio/auth-engine": "workspace:*",
     "@mission-studio/mission-engine": "workspace:*",
     "@mission-studio/browser-repository": "workspace:*",
     "@mission-studio/completion-engine": "workspace:*",
@@ -18,6 +19,7 @@
     "@mission-studio/sync-engine": "workspace:*",
     "@mission-studio/browser-sync-queue": "workspace:*",
     "@mission-studio/supabase-mission-connector": "workspace:*",
+    "@mission-studio/supabase-auth-adapter": "workspace:*",
     "@vitejs/plugin-react": "latest",
     "vite": "latest",
     "react": "latest",

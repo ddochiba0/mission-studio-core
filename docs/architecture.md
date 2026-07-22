@@ -21,5 +21,7 @@ future adapters -> packages/mission-engine -> packages/core
 - `sync-engine`: offline-first queueing and server-connector orchestration
 - `browser-sync-queue`: browser persistence Adapter for pending server operations
 - `supabase-mission-connector`: optional deployment Connector; owns Supabase row mapping
+- `auth-engine`: vendor-neutral authentication state and actions
+- `supabase-auth-adapter`: optional Supabase session/login implementation
 
 Application-specific words and rules belong outside `core` and `mission-engine`.

@@ -1,4 +1,4 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { MissionDefinition, MissionId } from "@mission-studio/core";
 import type { MissionRemoteConnector } from "@mission-studio/sync-engine";
 
@@ -29,5 +29,9 @@ export class SupabaseMissionConnector implements MissionRemoteConnector {
 
 export function createSupabaseMissionConnector(url: string, publishableKey: string): SupabaseMissionConnector {
   if (!url || !publishableKey) throw new Error("Supabase 프로젝트 주소와 Publishable Key가 필요합니다.");
-  return new SupabaseMissionConnector(createClient(url, publishableKey) as unknown as SupabaseLike);
+  return createSupabaseMissionConnectorFromClient(createClient(url, publishableKey));
+}
+
+export function createSupabaseMissionConnectorFromClient(client: SupabaseClient): SupabaseMissionConnector {
+  return new SupabaseMissionConnector(client as unknown as SupabaseLike);
 }
