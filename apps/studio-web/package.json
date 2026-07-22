@@ -17,6 +17,7 @@
     "@mission-studio/map-adapter-leaflet": "workspace:*",
     "@mission-studio/sync-engine": "workspace:*",
     "@mission-studio/browser-sync-queue": "workspace:*",
+    "@mission-studio/supabase-mission-connector": "workspace:*",
     "@vitejs/plugin-react": "latest",
     "vite": "latest",
     "react": "latest",

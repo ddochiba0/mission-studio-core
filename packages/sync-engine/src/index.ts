@@ -65,12 +65,21 @@ export class SyncingMissionRepository implements MissionRepository {
 
   public async save(mission: MissionDefinition): Promise<void> {
     await this.local.save(mission);
+    for (const pending of await this.queue.list()) {
+      if (pending.type === "upsert" && pending.mission.id === mission.id) await this.queue.remove(pending.id);
+    }
     await this.queue.put({ id: this.dependencies.createId(), type: "upsert", mission: structuredClone(mission), queuedAt: this.dependencies.now().toISOString(), attempts: 0 });
   }
 
   public async delete(id: MissionId): Promise<boolean> {
     const deleted = await this.local.delete(id);
-    if (deleted) await this.queue.put({ id: this.dependencies.createId(), type: "delete", missionId: id, queuedAt: this.dependencies.now().toISOString(), attempts: 0 });
+    if (deleted) {
+      for (const pending of await this.queue.list()) {
+        const matches = pending.type === "upsert" ? pending.mission.id === id : pending.missionId === id;
+        if (matches) await this.queue.remove(pending.id);
+      }
+      await this.queue.put({ id: this.dependencies.createId(), type: "delete", missionId: id, queuedAt: this.dependencies.now().toISOString(), attempts: 0 });
+    }
     return deleted;
   }
 }

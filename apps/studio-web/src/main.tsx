@@ -5,8 +5,9 @@ import { BrowserMissionRepository } from "@mission-studio/browser-repository";
 import { LeafletMissionMap } from "@mission-studio/map-adapter-leaflet";
 import { CompletionEngine } from "@mission-studio/completion-engine";
 import { TemplateEngine } from "@mission-studio/template-engine";
-import { SyncingMissionRepository } from "@mission-studio/sync-engine";
+import { SyncEngine, SyncingMissionRepository, type SyncReport } from "@mission-studio/sync-engine";
 import { BrowserSyncQueue } from "@mission-studio/browser-sync-queue";
+import { createSupabaseMissionConnector } from "@mission-studio/supabase-mission-connector";
 import "./style.css";
 
 const engine = new MissionEngine({ createId: crypto.randomUUID, now: () => new Date() });
@@ -15,6 +16,9 @@ const localRepository = new BrowserMissionRepository(localStorage);
 const repository = new SyncingMissionRepository(localRepository, syncQueue, { createId: crypto.randomUUID, now: () => new Date() });
 const service = new MissionService(engine, repository);
 const templateEngine = new TemplateEngine({ createId: crypto.randomUUID, now: () => new Date() });
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined;
+const syncEngine = supabaseUrl && supabaseKey ? new SyncEngine(syncQueue, createSupabaseMissionConnector(supabaseUrl, supabaseKey)) : null;
 
 function App() {
   const [missions, setMissions] = useState<readonly MissionDefinition[]>([]);
@@ -23,6 +27,7 @@ function App() {
   const [description, setDescription] = useState("");
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const [pendingSync, setPendingSync] = useState(0);
+  const [syncReport, setSyncReport] = useState<SyncReport | null>(null);
   const selected = missions.find((mission) => mission.id === selectedId) ?? null;
   const refresh = async (selectId?: string) => {
     const next = await service.list(); setMissions(next);
@@ -32,6 +37,11 @@ function App() {
     setPendingSync((await syncQueue.list()).length);
   };
   useEffect(() => { void refresh(); }, []);
+  useEffect(() => {
+    if (!syncEngine) return;
+    const synchronize = async () => { const report = await syncEngine.flush(); setSyncReport(report); setPendingSync(report.pending); };
+    void synchronize(); window.addEventListener("online", synchronize); return () => window.removeEventListener("online", synchronize);
+  }, []);
 
   async function createMission(event: React.FormEvent) {
     event.preventDefault(); if (!title.trim()) return;
@@ -69,7 +79,7 @@ function App() {
   }
 
   return <main>
-    <header><div><p className="eyebrow">MISSION STUDIO CORE V2</p><h1>Mission Studio</h1></div><div className="header-status"><span className="saved">● {savedAt ? `${savedAt.toLocaleTimeString()} 로컬 저장 완료` : "불러오기 완료"}</span><span className="pending">서버 미연결 · 전송대기 {pendingSync}건</span><span className="sprint">SPRINT 8</span></div></header>
+    <header><div><p className="eyebrow">MISSION STUDIO CORE V2</p><h1>Mission Studio</h1></div><div className="header-status"><span className="saved">● {savedAt ? `${savedAt.toLocaleTimeString()} 로컬 저장 완료` : "불러오기 완료"}</span><SyncBadge connected={!!syncEngine} pending={pendingSync} report={syncReport} /><span className="sprint">SPRINT 9</span></div></header>
     <div className="workspace">
       <aside>
         <form onSubmit={createMission}>
@@ -91,6 +101,13 @@ function App() {
       <ParticipantPreview mission={selected} />
     </div>
   </main>;
+}
+
+function SyncBadge({ connected, pending, report }: { connected: boolean; pending: number; report: SyncReport | null }) {
+  if (!connected) return <span className="pending">서버 미설정 · 전송대기 {pending}건</span>;
+  if (report?.state === "error") return <span className="sync-error" title={report.errors.join("\n")}>동기화 오류 · 대기 {pending}건</span>;
+  if (pending > 0) return <span className="pending">서버 전송대기 {pending}건</span>;
+  return <span className="synced">서버 동기화 완료</span>;
 }
 
 function ParticipantPreview({ mission }: { mission: MissionDefinition | null }) {
