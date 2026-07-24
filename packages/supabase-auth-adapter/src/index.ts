@@ -1,4 +1,4 @@
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { createClient, type AuthChangeEvent, type SupabaseClient } from "@supabase/supabase-js";
 import type { AuthConnector, AuthSession } from "@mission-studio/auth-engine";
 
 export class SupabaseAuthAdapter implements AuthConnector {
@@ -23,8 +23,20 @@ export class SupabaseAuthAdapter implements AuthConnector {
     if (error) throw new Error(`로그아웃 실패: ${error.message}`);
   }
 
+  public async updatePassword(password: string): Promise<void> {
+    const { error } = await this.client.auth.updateUser({ password });
+    if (error) throw new Error(`비밀번호 변경 실패: ${friendlyMessage(error.message)}`);
+  }
+
   public subscribe(listener: (session: AuthSession | null) => void): () => void {
     const { data } = this.client.auth.onAuthStateChange((_event, session) => listener(mapSession(session)));
+    return () => data.subscription.unsubscribe();
+  }
+
+  public onPasswordRecovery(listener: () => void): () => void {
+    const { data } = this.client.auth.onAuthStateChange((event: AuthChangeEvent) => {
+      if (event === "PASSWORD_RECOVERY") listener();
+    });
     return () => data.subscription.unsubscribe();
   }
 }
@@ -42,5 +54,6 @@ function mapSession(session: { user: { id: string; email?: string } } | null): A
 function friendlyMessage(message: string): string {
   if (/invalid login credentials/i.test(message)) return "이메일 또는 비밀번호가 맞지 않습니다.";
   if (/email not confirmed/i.test(message)) return "이메일 확인을 먼저 완료하세요.";
+  if (/password should be at least/i.test(message)) return "새 비밀번호는 8자 이상 입력하세요.";
   return message;
 }
