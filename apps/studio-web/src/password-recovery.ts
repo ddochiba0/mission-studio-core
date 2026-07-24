@@ -1,5 +1,6 @@
 import { AuthEngine } from "@mission-studio/auth-engine";
 import { createSupabaseClient, SupabaseAuthAdapter } from "@mission-studio/supabase-auth-adapter";
+import "./password-recovery.css";
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined;
